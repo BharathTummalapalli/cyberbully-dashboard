@@ -1,0 +1,11 @@
+venv
+.venv
+__pycache__
+*.pyc
+*.pyo
+moderation.db
+startup_error.log
+.git
+.gitignore
+.dockerignore
+Dockerfile

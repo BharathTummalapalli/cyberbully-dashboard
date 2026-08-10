@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    environment:
+      - DATABASE_PATH=/app/data/moderation.db
+      - USE_REAL_MODEL=${USE_REAL_MODEL:-False}
+    volumes:
+      - backend-data:/app/data
+    networks:
+      - cyb-network
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    depends_on:
+      - backend
+    networks:
+      - cyb-network
+    restart: unless-stopped
+
+volumes:
+  backend-data:
+
+networks:
+  cyb-network:
+    driver: bridge
