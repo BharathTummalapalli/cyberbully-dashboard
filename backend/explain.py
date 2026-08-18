@@ -1,6 +1,7 @@
 import re
 import random
 import os
+import logging
 
 # Try importing ML dependencies. Fallback to mock mode if not present or on low-resource machines.
 try:
@@ -12,7 +13,11 @@ try:
 except ImportError:
     ML_AVAILABLE = False
 
+logger = logging.getLogger(__name__)
+
 # List of toxic keywords for the fallback mock engine
+# NOTE: TOXIC_KEYWORDS is used as a simple keyword-matching fallback only.
+# It has no capability to analyze sentence context, negations (e.g. "not bad"), or sarcasm.
 TOXIC_KEYWORDS = {
     "trash": 0.72,
     "loser": 0.85,
@@ -48,14 +53,14 @@ def init_ml_model():
     """Initializes the HuggingFace model and LIME explainer if available."""
     global _nlp_pipeline, _explainer
     if not ML_AVAILABLE:
-        print("[-] ML dependencies missing. Backend will run in Fast Demo Mode.")
+        logger.warning("ML dependencies missing. Backend will run in Fast Demo Mode.")
         return False
     
     try:
         # Using a specialized model for toxicity/toxic comments classification
         # 'unitary/toxic-bert' is the industry standard for this task
         model_name = "unitary/toxic-bert"
-        print(f"[+] Loading HuggingFace model: {model_name}...")
+        logger.info(f"Loading HuggingFace model: {model_name}...")
         
         tokenizer = AutoTokenizer.from_pretrained(model_name)
         model = AutoModelForSequenceClassification.from_pretrained(model_name)
@@ -71,11 +76,20 @@ def init_ml_model():
         )
         
         _explainer = LimeTextExplainer(class_names=["Safe", "Cyberbullying"])
-        print("[+] HuggingFace Model and LIME Explainer loaded successfully!")
+        logger.info("HuggingFace Model and LIME Explainer loaded successfully!")
         return True
     except Exception as e:
-        print(f"[-] Failed to load HuggingFace model: {e}. Falling back to Fast Demo Mode.")
+        logger.error(f"Failed to load HuggingFace model: {e}. Falling back to Fast Demo Mode.", exc_info=True)
         return False
+
+def _validate_text(text):
+    """Validates that input is a non-empty string and does not exceed 2000 characters."""
+    if not isinstance(text, str):
+        raise ValueError("Input text must be a string.")
+    if not text.strip():
+        raise ValueError("Input text cannot be empty or whitespace only.")
+    if len(text) > 2000:
+        raise ValueError("Input text exceeds the maximum limit of 2000 characters.")
 
 def get_mock_lime_explanation(text):
     """
@@ -131,7 +145,14 @@ def get_mock_lime_explanation(text):
         else:
             explanations.append(f"Word '{word}' supported Safe classification by {int(abs(weight) * 100)}%.")
             
-    return prediction, confidence, explanations, highlighted, lime_weights
+    return {
+        "prediction": prediction,
+        "confidence": confidence,
+        "explanations": explanations,
+        "highlighted": highlighted,
+        "lime_weights": lime_weights,
+        "mode": "mock"
+    }
 
 def get_lime_explanation(text, use_real_model=False):
     """
@@ -139,7 +160,7 @@ def get_lime_explanation(text, use_real_model=False):
     If use_real_model is True and dependencies are loaded, performs real LIME perturbation.
     Otherwise, defaults to fast mock explanation.
     """
-    global _nlp_pipeline, _explainer
+    _validate_text(text)
     
     # Use real model if requested, available, and initialized
     if use_real_model and ML_AVAILABLE:
@@ -168,12 +189,12 @@ def get_lime_explanation(text, use_real_model=False):
                     probs.append([1.0 - toxic_score, toxic_score])
                 return np.array(probs)
 
-            # Generate LIME explanation (using 100 perturbations for speed on CPU)
+            # Generate LIME explanation (using 500 perturbations for stability)
             exp = _explainer.explain_instance(
                 text, 
                 predictor_fn, 
                 num_features=5, 
-                num_samples=100
+                num_samples=500
             )
             
             # Extract results
@@ -207,10 +228,17 @@ def get_lime_explanation(text, use_real_model=False):
                     impact = "increased" if weight > 0 else "decreased"
                     explanations.append(f"Word '{word}' {impact} risk profile by {int(abs(weight) * 100)}%.")
 
-            return prediction, confidence, explanations, highlighted, lime_weights
+            return {
+                "prediction": prediction,
+                "confidence": confidence,
+                "explanations": explanations,
+                "highlighted": highlighted,
+                "lime_weights": lime_weights,
+                "mode": "real"
+            }
             
         except Exception as e:
-            print(f"[-] Error during real LIME execution: {e}. Falling back to Mock.")
+            logger.error(f"Error during real LIME execution: {e}. Falling back to Mock.", exc_info=True)
             return get_mock_lime_explanation(text)
             
     # Default fallback

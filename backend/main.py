@@ -1,6 +1,7 @@
 import os
 import uuid
 import json
+import logging
 import pandas as pd
 from datetime import datetime, timedelta
 from fastapi import FastAPI, HTTPException, Body
@@ -11,6 +12,13 @@ import db
 import explain
 import graph
 
+# Configure standard logging format and levels
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 # Initialize FastAPI App
 app = FastAPI(
     title="Context-Aware Cyberbullying Detection System API",
@@ -18,10 +26,14 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Enable CORS for React frontend integration
+# CORS configuration
+allowed_origins_str = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:3000")
+allowed_origins = [origin.strip() for origin in allowed_origins_str.split(",") if origin.strip()]
+logger.info(f"Allowed CORS origins: {allowed_origins}")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000", "*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -31,23 +43,33 @@ app.add_middleware(
 USE_REAL_MODEL = False
 TWEETS_INDEX = 0
 
-# Database Initialization on Startup
+# Database Initialization and Conditionally Eager Model Preloading on Startup
 @app.on_event("startup")
 def startup_event():
+    global USE_REAL_MODEL
     db.init_db()
-    # Try pre-loading the ML model in the background if dependencies exist
-    if explain.ML_AVAILABLE:
-        print("[*] ML packages available. Pre-loading model...")
-        # We don't block startup, but let's initialize if possible
-        explain.init_ml_model()
+    
+    # Conditionally eager load model if USE_REAL_MODEL_ON_BOOT=true
+    eager_load = os.getenv("USE_REAL_MODEL_ON_BOOT", "false").lower() == "true"
+    if eager_load:
+        if explain.ML_AVAILABLE:
+            logger.info("Eager loading ML model on boot (USE_REAL_MODEL_ON_BOOT=true)...")
+            success = explain.init_ml_model()
+            if success:
+                USE_REAL_MODEL = True
+            else:
+                logger.warning("Eager loading failed. Falling back to Fast Demo Mode.")
+        else:
+            logger.warning("ML packages missing. Cannot eager load. Running in Fast Demo Mode.")
     else:
-        print("[!] ML packages not available. Running in Fast Demo Mode.")
+        logger.info("ML model will be lazy-loaded when model mode is toggled.")
 
 # Pydantic Schemas
 class PredictionRequest(BaseModel):
     text: str
     user_id: str
     username: str = "@anonymous"
+    target_user: str = "@anonymous"
 
 class ActionRequest(BaseModel):
     action: str
@@ -67,9 +89,13 @@ def predict_post(payload: PredictionRequest):
     Classifies a text block for cyberbullying, generates LIME weights, 
     saves details to the SQLite logs, and returns the metadata.
     """
+    # Pre-validate whitespace/empty text to return 400 before calling model
+    if not payload.text or not payload.text.strip():
+        raise HTTPException(status_code=400, detail="Text content cannot be empty or whitespace only.")
+        
     try:
-        # Run dual-mode explainer
-        prediction, confidence, explanations, highlighted, lime_weights = explain.get_lime_explanation(
+        # Run dual-mode explainer (returns dictionary)
+        result = explain.get_lime_explanation(
             payload.text, 
             use_real_model=USE_REAL_MODEL
         )
@@ -81,27 +107,41 @@ def predict_post(payload: PredictionRequest):
         log_data = {
             "id": post_id,
             "user_id": payload.username,  # map user handle to user_id column
+            "target_user": payload.target_user,
             "text": payload.text,
-            "prediction": prediction,
-            "confidence": confidence,
+            "prediction": result["prediction"],
+            "confidence": result["confidence"],
+            "mode": result["mode"],
             "timestamp": timestamp
         }
-        db.log_post(log_data)
+        
+        success = db.log_post(log_data)
+        if not success:
+            logger.error("Failed to log post to SQLite database.")
+            raise HTTPException(status_code=500, detail="Failed to persist post to the database.")
         
         return {
             "id": post_id,
             "user_id": payload.user_id,
             "username": payload.username,
+            "target_user": payload.target_user,
             "text": payload.text,
-            "prediction": prediction,
-            "confidence": confidence,
-            "explanations": explanations,
-            "highlighted_words": highlighted,
-            "lime_weights": lime_weights,
+            "prediction": result["prediction"],
+            "confidence": result["confidence"],
+            "explanations": result["explanations"],
+            "highlighted_words": result["highlighted"],
+            "lime_weights": result["lime_weights"],
             "moderator_action": "Pending",
+            "mode": result["mode"],
             "timestamp": timestamp
         }
+    except ValueError as ve:
+        logger.warning(f"Validation error in get_lime_explanation: {ve}")
+        raise HTTPException(status_code=400, detail=str(ve))
+    except HTTPException as he:
+        raise he
     except Exception as e:
+        logger.error(f"Error in predict_post endpoint: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/simulator/next")
@@ -114,11 +154,13 @@ def simulator_next():
     csv_path = os.path.join(os.path.dirname(__file__), "tweets.csv")
     
     if not os.path.exists(csv_path):
+        logger.error(f"Tweets simulation dataset not found at {csv_path}")
         raise HTTPException(status_code=404, detail="tweets.csv simulation dataset not found.")
         
     try:
         df = pd.read_csv(csv_path)
         if len(df) == 0:
+            logger.error("Simulation dataset tweets.csv is empty.")
             raise HTTPException(status_code=500, detail="tweets.csv is empty")
             
         # Wrap index around
@@ -129,9 +171,10 @@ def simulator_next():
         text = str(row['text'])
         user_id = str(row['user_id'])
         username = str(row['username'])
+        target_user = str(row['target_user']) if 'target_user' in row and not pd.isna(row['target_user']) else "@anonymous"
         
         # Run classification
-        prediction, confidence, explanations, highlighted, lime_weights = explain.get_lime_explanation(
+        result = explain.get_lime_explanation(
             text, 
             use_real_model=USE_REAL_MODEL
         )
@@ -148,28 +191,37 @@ def simulator_next():
         log_data = {
             "id": post_id,
             "user_id": username,
+            "target_user": target_user,
             "text": text,
-            "prediction": prediction,
-            "confidence": confidence,
+            "prediction": result["prediction"],
+            "confidence": result["confidence"],
+            "mode": result["mode"],
             "timestamp": timestamp
         }
-        db.log_post(log_data)
+        
+        success = db.log_post(log_data)
+        if not success:
+            logger.error("Failed to log simulated post to database.")
+            raise HTTPException(status_code=500, detail="Failed to persist simulated post to the database.")
         
         return {
             "id": post_id,
             "user_id": user_id,
             "username": username,
+            "target_user": target_user,
             "text": text,
-            "prediction": prediction,
-            "confidence": confidence,
-            "explanations": explanations,
-            "highlighted_words": highlighted,
-            "lime_weights": lime_weights,
+            "prediction": result["prediction"],
+            "confidence": result["confidence"],
+            "explanations": result["explanations"],
+            "highlighted_words": result["highlighted"],
+            "lime_weights": result["lime_weights"],
             "moderator_action": "Pending",
+            "mode": result["mode"],
             "timestamp": timestamp
         }
         
     except Exception as e:
+        logger.error(f"Error in simulator_next endpoint: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/posts")
@@ -184,7 +236,11 @@ def update_action(post_id: str, payload: ActionRequest):
     if payload.action not in valid_actions:
         raise HTTPException(status_code=400, detail=f"Invalid action. Choose from {valid_actions}")
         
-    db.update_moderator_action(post_id, payload.action)
+    success = db.update_moderator_action(post_id, payload.action)
+    if not success:
+        logger.warning(f"Moderator action update failed: Post ID {post_id} not found.")
+        raise HTTPException(status_code=404, detail="Post not found or failed to update.")
+        
     return {"status": "success", "post_id": post_id, "action": payload.action}
 
 @app.get("/graph")
@@ -194,29 +250,27 @@ def get_graph_data():
     """
     json_path = os.path.join(os.path.dirname(__file__), "interactions.json")
     if not os.path.exists(json_path):
+        logger.warning(f"interactions.json not found at {json_path}")
         return {"nodes": [], "edges": [], "top_abusers": [], "clusters": []}
         
     try:
         with open(json_path, "r") as f:
             interactions = json.load(f)
         
-        # We can also dynamically add some interactions from the database to expand the graph!
-        # Fetch actual cyberbullying logs in DB and add to the graph list
+        # Dynamically add interactions from database logs (excluding anonymous or self-directed posts)
         all_logs = db.get_all_posts()
         for log in all_logs:
             if log["prediction"] == "Cyberbullying":
-                # Make up a random victim node if username is known, or map it.
-                # E.g. log["user_id"] is the attacker. Let's map to standard victim in database context.
                 attacker = log["user_id"]
-                # Create a victim representation if not present, just to show dynamic integration
-                victim = "@moderator_victim"
-                if attacker != "@anonymous" and [attacker, victim] not in interactions:
-                    # Limit additions so network stays readable
-                    interactions.append([attacker, victim])
+                target = log.get("target_user")
+                if attacker and target and attacker != "@anonymous" and target != "@anonymous" and attacker != target:
+                    if [attacker, target] not in interactions:
+                        interactions.append([attacker, target])
                     
         analysis = graph.analyze_graph(interactions)
         return analysis
     except Exception as e:
+        logger.error(f"Error compiling graph data: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/analytics")
@@ -224,7 +278,7 @@ def get_dashboard_analytics():
     """Compiles dashboard analytics including daily trends, counts, and moderator accuracy."""
     analytics = db.get_analytics()
     
-    # We also inject the top abusers from our NetworkX graph for convenience
+    # Inject top abusers from NetworkX graph
     graph_data = get_graph_data()
     analytics["top_abusers"] = graph_data.get("top_abusers", [])
     return analytics
@@ -235,6 +289,7 @@ def toggle_model_mode():
     global USE_REAL_MODEL
     
     if not explain.ML_AVAILABLE:
+        logger.warning("Attempted to switch to BERT, but ML packages are missing.")
         return {
             "status": "error",
             "message": "HuggingFace/PyTorch libraries are not installed locally. Cannot enable BERT.",
@@ -244,8 +299,9 @@ def toggle_model_mode():
     # Toggle model mode
     USE_REAL_MODEL = not USE_REAL_MODEL
     
-    # Preload model if we just enabled it
+    # Lazy load model if enabled
     if USE_REAL_MODEL and explain._nlp_pipeline is None:
+        logger.info("Lazy loading HuggingFace model on toggle mode...")
         initialized = explain.init_ml_model()
         if not initialized:
             USE_REAL_MODEL = False
@@ -273,4 +329,5 @@ def get_system_status():
 
 if __name__ == "__main__":
     import uvicorn
+    logger.info("Starting uvicorn server on localhost:8000...")
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)

@@ -1,8 +1,10 @@
 import sqlite3
 import os
+import logging
 from datetime import datetime
 
 DB_PATH = os.getenv("DATABASE_PATH", os.path.join(os.path.dirname(__file__), "moderation.db"))
+logger = logging.getLogger(__name__)
 
 def get_db_connection():
     db_dir = os.path.dirname(DB_PATH)
@@ -13,46 +15,73 @@ def get_db_connection():
     return conn
 
 def init_db():
-    """Initializes the SQLite database with the moderation_logs table."""
+    """Initializes the SQLite database with the moderation_logs table and handles migrations."""
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS moderation_logs (
             id TEXT PRIMARY KEY,
             user_id TEXT,
+            target_user TEXT,
             post_text TEXT,
             prediction TEXT,
             confidence REAL,
             moderator_action TEXT DEFAULT 'Pending',
+            mode TEXT,
             timestamp TEXT
         )
     """)
     conn.commit()
+
+    # Check if target_user or mode columns are missing (auto-migration)
+    cursor.execute("PRAGMA table_info(moderation_logs)")
+    columns = [row["name"] for row in cursor.fetchall()]
+
+    if "target_user" not in columns:
+        try:
+            logger.info("Migrating database: adding 'target_user' column to 'moderation_logs' table.")
+            cursor.execute("ALTER TABLE moderation_logs ADD COLUMN target_user TEXT")
+            conn.commit()
+        except Exception as e:
+            logger.error(f"Failed to add target_user column: {e}", exc_info=True)
+
+    if "mode" not in columns:
+        try:
+            logger.info("Migrating database: adding 'mode' column to 'moderation_logs' table.")
+            cursor.execute("ALTER TABLE moderation_logs ADD COLUMN mode TEXT")
+            conn.commit()
+        except Exception as e:
+            logger.error(f"Failed to add mode column: {e}", exc_info=True)
+
     conn.close()
 
 def log_post(data):
     """
     Logs an AI prediction output to the database.
-    data format: {id, user_id, text, prediction, confidence, timestamp}
+    data format: {id, user_id, target_user, text, prediction, confidence, mode, timestamp}
     """
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         cursor.execute("""
             INSERT OR REPLACE INTO moderation_logs 
-            (id, user_id, post_text, prediction, confidence, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?)
+            (id, user_id, target_user, post_text, prediction, confidence, mode, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             data["id"],
             data.get("user_id", "anonymous"),
+            data.get("target_user", "@anonymous"),
             data["text"],
             data["prediction"],
             data["confidence"],
+            data.get("mode", "mock"),
             data.get("timestamp", datetime.now().isoformat())
         ))
         conn.commit()
+        return True
     except Exception as e:
-        print(f"Error logging post to DB: {e}")
+        logger.error(f"Error logging post to DB: {e}", exc_info=True)
+        return False
     finally:
         conn.close()
 
@@ -67,8 +96,10 @@ def update_moderator_action(post_id, action):
             WHERE id = ?
         """, (action, post_id))
         conn.commit()
+        return cursor.rowcount > 0
     except Exception as e:
-        print(f"Error updating moderator action: {e}")
+        logger.error(f"Error updating moderator action: {e}", exc_info=True)
+        return False
     finally:
         conn.close()
 
@@ -104,6 +135,7 @@ def get_analytics():
     
     # 2. Daily bullying count
     # Extract date part of ISO timestamp (YYYY-MM-DD)
+    # Grabs the most recent 14 days (DESC LIMIT 14) then re-sorts ascending for the chart.
     cursor.execute("""
         SELECT 
             SUBSTR(timestamp, 1, 10) as date,
@@ -111,10 +143,11 @@ def get_analytics():
             SUM(CASE WHEN prediction = 'Safe' THEN 1 ELSE 0 END) as safe_count
         FROM moderation_logs
         GROUP BY date
-        ORDER BY date ASC
+        ORDER BY date DESC
         LIMIT 14
     """)
     daily_trends = [dict(row) for row in cursor.fetchall()]
+    daily_trends.reverse() # Sort ascending chronological for charts
 
     # 3. Moderator Accuracy (Agreement rate)
     # Definition of agreement:
@@ -136,7 +169,7 @@ def get_analytics():
         agreed_count = cursor.fetchone()[0]
         accuracy = round((agreed_count / decided_count) * 100, 1)
     else:
-        accuracy = 100.0  # Default to 100% if no posts have been processed yet
+        accuracy = None  # Default to None if no posts have been processed yet
 
     conn.close()
 
@@ -146,5 +179,6 @@ def get_analytics():
         "hidden_count": counts.get("hidden", 0) or 0,
         "pending_count": counts.get("pending", 0) or 0,
         "daily_trends": daily_trends,
-        "moderator_accuracy": accuracy
+        "moderator_accuracy": accuracy,
+        "moderator_accuracy_sample_size": decided_count
     }

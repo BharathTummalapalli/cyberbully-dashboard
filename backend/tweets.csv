@@ -1,21 +1,21 @@
-id,username,text,user_id
-1,@toxic_dan,"You are absolute trash, literally the worst person on this site. Please delete your account.",user_101
-2,@hater_harry,"Nobody likes you. You are a complete loser and you will never succeed in life.",user_102
-3,@bullier_bob,"Wow you look incredibly ugly in that picture, go do something about your face.",user_103
-4,@toxic_dan,"Stupid idiot, stop posting your garbage here, nobody cares about your opinion.",user_101
-5,@mean_mel,"You are so fat and gross, why do you even upload photos of yourself?",user_104
-6,@bullier_bob,"You should be ashamed of yourself. You are completely worthless.",user_103
-7,@hater_harry,"Shut up you brainless troll. You are nothing but a disappointment.",user_102
-8,@troll_tim,"Get lost, you're the most annoying and hateful jerk I've ever seen.",user_105
-9,@toxic_dan,"You are a pathetic excuse for a human being. Everyone hates you.",user_101
-10,@troll_tim,"I hope you get banned soon, you are a toxic parasite on this community.",user_105
-11,@kind_katie,"This is such a lovely picture! Thanks for sharing this beautiful view.",user_106
-12,@alex_dev,"I completely agree with your analysis of the stock market trends today.",user_107
-13,@happy_helen,"Had a great time with the family at the park this weekend. Truly blessed.",user_108
-14,@kind_katie,"That project looks amazing! Keep up the hard work and dedication.",user_106
-15,@alex_dev,"Can anyone recommend a good Python library for handling time-series data?",user_107
-16,@good_vibes,"Congratulations on your graduation! So proud of all your achievements.",user_109
-17,@happy_helen,"The weather is absolutely perfect today for a walk along the beach.",user_108
-18,@good_vibes,"Highly recommend checking out this new book, it really changed my perspective.",user_109
-19,@kind_katie,"Such an inspiring story, thank you for sharing your journey with us.",user_106
-20,@alex_dev,"Let's meet up for coffee sometime next week and discuss the new ideas.",user_107
+id,username,text,user_id,target_user
+1,@toxic_dan,"You are absolute trash, literally the worst person on this site. Please delete your account.",user_101,@kind_katie
+2,@hater_harry,"Nobody likes you. You are a complete loser and you will never succeed in life.",user_102,@happy_helen
+3,@bullier_bob,"Wow you look incredibly ugly in that picture, go do something about your face.",user_103,@good_vibes
+4,@toxic_dan,"Stupid idiot, stop posting your garbage here, nobody cares about your opinion.",user_101,@alex_dev
+5,@mean_mel,"You are so fat and gross, why do you even upload photos of yourself?",user_104,@good_vibes
+6,@bullier_bob,"You should be ashamed of yourself. You are completely worthless.",user_103,@kind_katie
+7,@hater_harry,"Shut up you brainless troll. You are nothing but a disappointment.",user_102,@kind_katie
+8,@troll_tim,"Get lost, you're the most annoying and hateful jerk I've ever seen.",user_105,@alex_dev
+9,@toxic_dan,"You are a pathetic excuse for a human being. Everyone hates you.",user_101,@happy_helen
+10,@troll_tim,"I hope you get banned soon, you are a toxic parasite on this community.",user_105,@kind_katie
+11,@kind_katie,"This is such a lovely picture! Thanks for sharing this beautiful view.",user_106,@anonymous
+12,@alex_dev,"I completely agree with your analysis of the stock market trends today.",user_107,@anonymous
+13,@happy_helen,"Had a great time with the family at the park this weekend. Truly blessed.",user_108,@anonymous
+14,@kind_katie,"That project looks amazing! Keep up the hard work and dedication.",user_106,@anonymous
+15,@alex_dev,"Can anyone recommend a good Python library for handling time-series data?",user_107,@anonymous
+16,@good_vibes,"Congratulations on your graduation! So proud of all your achievements.",user_109,@anonymous
+17,@happy_helen,"The weather is absolutely perfect today for a walk along the beach.",user_108,@anonymous
+18,@good_vibes,"Highly recommend checking out this new book, it really changed my perspective.",user_109,@anonymous
+19,@kind_katie,"Such an inspiring story, thank you for sharing your journey with us.",user_106,@anonymous
+20,@alex_dev,"Let's meet up for coffee sometime next week and discuss the new ideas.",user_107,@anonymous
