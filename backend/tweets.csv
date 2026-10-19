@@ -1,21 +1,101 @@
-id,username,text,user_id,target_user
+id,username,text,user_id,parent_username
 1,@toxic_dan,"You are absolute trash, literally the worst person on this site. Please delete your account.",user_101,@kind_katie
-2,@hater_harry,"Nobody likes you. You are a complete loser and you will never succeed in life.",user_102,@happy_helen
+2,@hater_harry,Nobody likes you. You are a complete loser and you will never succeed in life.,user_102,@happy_helen
 3,@bullier_bob,"Wow you look incredibly ugly in that picture, go do something about your face.",user_103,@good_vibes
 4,@toxic_dan,"Stupid idiot, stop posting your garbage here, nobody cares about your opinion.",user_101,@alex_dev
 5,@mean_mel,"You are so fat and gross, why do you even upload photos of yourself?",user_104,@good_vibes
-6,@bullier_bob,"You should be ashamed of yourself. You are completely worthless.",user_103,@kind_katie
-7,@hater_harry,"Shut up you brainless troll. You are nothing but a disappointment.",user_102,@kind_katie
+6,@bullier_bob,You should be ashamed of yourself. You are completely worthless.,user_103,@kind_katie
+7,@hater_harry,Shut up you brainless troll. You are nothing but a disappointment.,user_102,@kind_katie
 8,@troll_tim,"Get lost, you're the most annoying and hateful jerk I've ever seen.",user_105,@alex_dev
-9,@toxic_dan,"You are a pathetic excuse for a human being. Everyone hates you.",user_101,@happy_helen
+9,@toxic_dan,You are a pathetic excuse for a human being. Everyone hates you.,user_101,@happy_helen
 10,@troll_tim,"I hope you get banned soon, you are a toxic parasite on this community.",user_105,@kind_katie
-11,@kind_katie,"This is such a lovely picture! Thanks for sharing this beautiful view.",user_106,@anonymous
-12,@alex_dev,"I completely agree with your analysis of the stock market trends today.",user_107,@anonymous
-13,@happy_helen,"Had a great time with the family at the park this weekend. Truly blessed.",user_108,@anonymous
-14,@kind_katie,"That project looks amazing! Keep up the hard work and dedication.",user_106,@anonymous
-15,@alex_dev,"Can anyone recommend a good Python library for handling time-series data?",user_107,@anonymous
-16,@good_vibes,"Congratulations on your graduation! So proud of all your achievements.",user_109,@anonymous
-17,@happy_helen,"The weather is absolutely perfect today for a walk along the beach.",user_108,@anonymous
-18,@good_vibes,"Highly recommend checking out this new book, it really changed my perspective.",user_109,@anonymous
-19,@kind_katie,"Such an inspiring story, thank you for sharing your journey with us.",user_106,@anonymous
-20,@alex_dev,"Let's meet up for coffee sometime next week and discuss the new ideas.",user_107,@anonymous
+11,@mean_mel,"Your posts are pure garbage. Seriously, you have zero brain cells.",user_104,@alex_dev
+12,@bullier_bob,You are a complete disappointment to everyone around you.,user_103,@happy_helen
+13,@toxic_dan,"Shut your mouth, you stupid loser. Nobody asked for your input.",user_101,@good_vibes
+14,@hater_harry,You look like a total idiot in that video. Delete it now.,user_102,@alex_dev
+15,@mean_mel,I hate everything you stand for. You are worthless trash.,user_104,@kind_katie
+16,@troll_tim,Why are you still talking? You're annoying and brainless.,user_105,@happy_helen
+17,@bullier_bob,You are gross and ugly. Nobody wants to see your posts.,user_103,@alex_dev
+18,@toxic_dan,"Go away, you hateful troll. You are not wanted here.",user_101,@kind_katie
+19,@hater_harry,You are a parasite on this forum. Get banned already.,user_102,@good_vibes
+20,@mean_mel,Your face is ugly and your opinions are stupid.,user_104,@happy_helen
+21,@troll_tim,You look like garbage today. What a total loser.,user_105,@good_vibes
+22,@bullier_bob,"Keep crying, you pathetic baby. Nobody cares.",user_103,@kind_katie
+23,@toxic_dan,You're a brainless idiot who shouldn't have internet access.,user_101,@alex_dev
+24,@hater_harry,"Everything you write is trash, just like you.",user_102,@happy_helen
+25,@mean_mel,"Ugly, fat, and stupid. You have nothing going for you.",user_104,@good_vibes
+26,@troll_tim,Your existance is a disappointment. Delete your account.,user_105,@kind_katie
+27,@bullier_bob,You're the worst. Stop spamming your gross face.,user_103,@good_vibes
+28,@toxic_dan,Nobody likes a loser like you. Shut up.,user_101,@happy_helen
+29,@hater_harry,You are pathetic and annoying. Get lost.,user_102,@alex_dev
+30,@mean_mel,Absolute garbage person. I hate you so much.,user_104,@kind_katie
+31,@kind_katie,This is such a lovely picture! Thanks for sharing this beautiful view.,user_106,@anonymous
+32,@alex_dev,I completely agree with your analysis of the stock market trends today.,user_107,@anonymous
+33,@happy_helen,Had a great time with the family at the park this weekend. Truly blessed.,user_108,@anonymous
+34,@kind_katie,That project looks amazing! Keep up the hard work and dedication.,user_106,@anonymous
+35,@alex_dev,Can anyone recommend a good Python library for handling time-series data?,user_107,@anonymous
+36,@good_vibes,Congratulations on your graduation! So proud of all your achievements.,user_109,@anonymous
+37,@happy_helen,The weather is absolutely perfect today for a walk along the beach.,user_108,@anonymous
+38,@good_vibes,"Highly recommend checking out this new book, it really changed my perspective.",user_109,@anonymous
+39,@kind_katie,"Such an inspiring story, thank you for sharing your journey with us.",user_106,@anonymous
+40,@alex_dev,Let's meet up for coffee sometime next week and discuss the new ideas.,user_107,@anonymous
+41,@happy_helen,Great tutorial! It explained the concept step-by-step so clearly.,user_108,@anonymous
+42,@good_vibes,"Thank you for the support, I really appreciate the kind words.",user_109,@anonymous
+43,@kind_katie,Have a wonderful day everyone! Spread love and positive thoughts.,user_106,@anonymous
+44,@alex_dev,The open-source community is so helpful and welcoming. Glad to be here.,user_107,@anonymous
+45,@happy_helen,Such a cute puppy! What breed is it? Looks very happy.,user_108,@anonymous
+46,@good_vibes,"Your cooking looks delicious, can you share the recipe next time?",user_109,@anonymous
+47,@kind_katie,Beautiful sunset! Nature never fails to amaze me with its colors.,user_106,@anonymous
+48,@alex_dev,Just released a new version of the library. Feedback is welcome!,user_107,@anonymous
+49,@happy_helen,Hope you feel better soon! Sending warm wishes your way.,user_108,@anonymous
+50,@good_vibes,What a fantastic performance! The band was absolutely incredible.,user_109,@anonymous
+51,@kind_katie,"This advice was really helpful, thanks for posting this outline.",user_106,@anonymous
+52,@alex_dev,Looking forward to attending the tech conference in Chicago next month.,user_107,@anonymous
+53,@happy_helen,This is so creative! You have a wonderful artistic talent.,user_108,@anonymous
+54,@good_vibes,Wishing you the best of luck with your new business venture!,user_109,@anonymous
+55,@kind_katie,Safe travels! Have a wonderful trip and take lots of photos.,user_106,@anonymous
+56,@alex_dev,Nice clean code. The separation of concerns makes it easy to maintain.,user_107,@anonymous
+57,@happy_helen,Happy birthday! Hope you have a wonderful celebration today.,user_108,@anonymous
+58,@good_vibes,You did a fantastic job hosting the webinar yesterday. Very engaging.,user_109,@anonymous
+59,@kind_katie,This garden looks so peaceful and relaxing. A great place to unwind.,user_106,@anonymous
+60,@alex_dev,Interesting article. It raises some very good points about tech ethics.,user_107,@anonymous
+61,@alex_dev,"Don't worry, you are not stupid. You just need more practice.",user_107,@kind_katie
+62,@happy_helen,"You are not a loser, you did your absolute best in the game.",user_108,@good_vibes
+63,@good_vibes,Your photo is not ugly at all! I think you look lovely.,user_109,@happy_helen
+64,@kind_katie,"Don't think you are a disappointment, we are all proud of you.",user_106,@mean_mel
+65,@alex_dev,"This project is not trash, it actually has a lot of potential.",user_107,@troll_tim
+66,@happy_helen,Don't call yourself an idiot. Everyone makes mistakes.,user_108,@good_vibes
+67,@good_vibes,"You are not worthless, you are a valuable member of our team.",user_109,@kind_katie
+68,@kind_katie,"Your comments are never annoying, I always love hearing your input.",user_106,@alex_dev
+69,@alex_dev,"You aren't a parasite, you contribute so much to this group.",user_107,@happy_helen
+70,@happy_helen,No shame in failing. You will get it right next time.,user_108,@good_vibes
+71,@good_vibes,Don't delete your account! We would miss your posts here.,user_109,@kind_katie
+72,@kind_katie,"He is not a jerk, he was just having a stressful day.",user_106,@mean_mel
+73,@alex_dev,"Your code is not garbage, it just needs a little refactoring.",user_107,@troll_tim
+74,@happy_helen,"It is not a hate post, they are just giving constructive feedback.",user_108,@toxic_dan
+75,@good_vibes,"You shouldn't feel ashamed, you stood up for what is right.",user_109,@happy_helen
+76,@kind_katie,"Oh my god, you are killing it on stage! Incredible performance!",user_106,@good_vibes
+77,@alex_dev,That guitar solo was sick! You have amazing skills.,user_107,@happy_helen
+78,@happy_helen,"GG, that friendly trash talk made the match so much fun!",user_108,@toxic_dan
+79,@good_vibes,"You are killin it with these new designs, keep them coming!",user_109,@alex_dev
+80,@kind_katie,"This new music track has a sick beat, I can't stop listening.",user_106,@good_vibes
+81,@alex_dev,"No worries, a little game trash talk is always fun.",user_107,@troll_tim
+82,@happy_helen,"Wow, those dance moves were sick! Absolute genius.",user_108,@kind_katie
+83,@good_vibes,"You are absolutely killing it in your new career, congratulations!",user_109,@happy_helen
+84,@kind_katie,That play was sick! What an awesome game.,user_106,@alex_dev
+85,@alex_dev,Gamer trash talk is harmless when it's just friendly banter.,user_107,@bullier_bob
+86,@mean_mel,"Oh wow you look so pretty today, said no one ever.",user_104,@kind_katie
+87,@toxic_dan,"Your post is so smart, said no one ever.",user_101,@alex_dev
+88,@hater_harry,"You are a genius, said nobody ever.",user_102,@happy_helen
+89,@troll_tim,"That is a lovely opinion, said no one ever.",user_105,@good_vibes
+90,@bullier_bob,"What a nice face, said no one ever. Go hide.",user_103,@kind_katie
+91,@mean_mel,"You are so helpful, said nobody ever. Get lost.",user_104,@alex_dev
+92,@toxic_dan,"This is a great picture, said no one ever. Delete it.",user_101,@good_vibes
+93,@hater_harry,"What a perfect explanation, said nobody ever. Brainless idiot.",user_102,@happy_helen
+94,@troll_tim,"You have a lovely voice, said no one ever. Shut up.",user_105,@kind_katie
+95,@bullier_bob,"Such a great job, said no one ever. You are worthless.",user_103,@alex_dev
+96,@mean_mel,"Oh what a genius idea, said no one ever. Trash.",user_104,@happy_helen
+97,@toxic_dan,"You look perfect, said nobody ever. Fat and ugly.",user_101,@good_vibes
+98,@hater_harry,"Such a lovely outfit, said no one ever. Gross.",user_102,@kind_katie
+99,@troll_tim,"Your comment is so helpful, said no one ever. Idiot.",user_105,@alex_dev
+100,@bullier_bob,"So smart, said nobody ever. Absolute garbage brain.",user_103,@happy_helen

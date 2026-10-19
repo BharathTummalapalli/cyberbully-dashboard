@@ -1,0 +1,16 @@
+{
+  "model_name": "distilbert-base-uncased",
+  "version": "context-distilbert-v1",
+  "training_samples": 318,
+  "validation_samples": 64,
+  "best_epoch": 4,
+  "metrics": {
+    "epoch": 4,
+    "val_loss": 0.0111,
+    "val_f1": 100.0,
+    "val_accuracy": 100.0,
+    "val_recall": 100.0,
+    "val_precision": 100.0
+  },
+  "saved_at": "C:\\FINALPROJECT\\cybbulldet\\backend\\training\\..\\models\\weights\\context_submodel.pt"
+}

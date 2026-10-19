@@ -1,0 +1,15 @@
+# Python compile cache & databases
+__pycache__/
+*.pyc
+*.db
+
+# Environment & Dependencies
+.env
+node_modules/
+dist/
+build/
+# Ignore PyTorch model weights
+*.pt
+*.bin
+*.pth
+backend/models/weights/

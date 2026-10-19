@@ -1,7 +1,23 @@
+"""
+Model Explainability and Inference Layer.
+
+ARCHITECTURAL NOTE (VIVA DEFENSE):
+This module provides model inference and LIME local feature attributions.
+Base toxicity is predicted via HuggingFace's 'unitary/toxic-bert' (or a keyword lexicon fallback).
+The base prediction is then modulated by the Rule-Based Context Adjustment Layer (in fusion.py)
+via an additive clamped formula:
+    S_fused = clamp(P_toxic + delta_neg + delta_slang + delta_sarcasm + delta_target, 0.0, 1.0)
+
+NOTE ON MODEL TERMINOLOGY:
+Deterministic linguistic heuristics are employed in this version.
+Training a secondary parameterized contextual classifier is reserved for future work.
+"""
+
 import re
 import random
 import os
 import logging
+from typing import Dict, Any, List
 
 # Try importing ML dependencies. Fallback to mock mode if not present or on low-resource machines.
 try:
@@ -13,11 +29,11 @@ try:
 except ImportError:
     ML_AVAILABLE = False
 
+import fusion
+
 logger = logging.getLogger(__name__)
 
 # List of toxic keywords for the fallback mock engine
-# NOTE: TOXIC_KEYWORDS is used as a simple keyword-matching fallback only.
-# It has no capability to analyze sentence context, negations (e.g. "not bad"), or sarcasm.
 TOXIC_KEYWORDS = {
     "trash": 0.72,
     "loser": 0.85,
@@ -53,36 +69,33 @@ def init_ml_model():
     """Initializes the HuggingFace model and LIME explainer if available."""
     global _nlp_pipeline, _explainer
     if not ML_AVAILABLE:
-        logger.warning("ML dependencies missing. Backend will run in Fast Demo Mode.")
+        logger.warning("ML dependencies missing. Backend will run in Keyword Fallback Mode.")
         return False
     
     try:
-        # Using a specialized model for toxicity/toxic comments classification
-        # 'unitary/toxic-bert' is the industry standard for this task
         model_name = "unitary/toxic-bert"
         logger.info(f"Loading HuggingFace model: {model_name}...")
         
         tokenizer = AutoTokenizer.from_pretrained(model_name)
         model = AutoModelForSequenceClassification.from_pretrained(model_name)
         
-        # CPU/GPU mapping
         device = 0 if torch.cuda.is_available() else -1
         _nlp_pipeline = pipeline(
             "text-classification", 
             model=model, 
             tokenizer=tokenizer, 
             device=device,
-            top_k=None # returns scores for all labels
+            top_k=None
         )
         
         _explainer = LimeTextExplainer(class_names=["Safe", "Cyberbullying"])
         logger.info("HuggingFace Model and LIME Explainer loaded successfully!")
         return True
     except Exception as e:
-        logger.error(f"Failed to load HuggingFace model: {e}. Falling back to Fast Demo Mode.", exc_info=True)
+        logger.error(f"Failed to load HuggingFace model: {e}. Falling back to Keyword Fallback Mode.", exc_info=True)
         return False
 
-def _validate_text(text):
+def _validate_text(text: str):
     """Validates that input is a non-empty string and does not exceed 2000 characters."""
     if not isinstance(text, str):
         raise ValueError("Input text must be a string.")
@@ -91,155 +104,212 @@ def _validate_text(text):
     if len(text) > 2000:
         raise ValueError("Input text exceeds the maximum limit of 2000 characters.")
 
-def get_mock_lime_explanation(text):
-    """
-    Simulates LIME text perturbations instantly.
-    Analyzes keywords, calculates confidence, highlights toxic tokens, and maps weights.
-    """
+def get_base_mock_score(text: str) -> tuple[float, dict, list]:
+    """Computes base toxicity probability using keyword matching without context rules."""
     words = re.findall(r'\b\w+\b', text.lower())
-    highlighted = []
+    matched_toxic = [w for w in set(words) if w in TOXIC_KEYWORDS]
+    
     lime_weights = {}
+    highlighted = []
     
-    # Identify matching toxic words and pull their predefined weights
-    matched_toxic = []
-    for word in words:
-        if word in TOXIC_KEYWORDS:
-            matched_toxic.append((word, TOXIC_KEYWORDS[word]))
-            
-    # Remove duplicate matching words
-    matched_toxic = list(set(matched_toxic))
-    
-    # Calculate confidence score
     if matched_toxic:
-        prediction = "Cyberbullying"
-        # Base confidence starts at 70%, increases with toxic words, capped at 99.0%
-        raw_conf = 70.0 + sum([w[1] * 10 for w in matched_toxic])
-        confidence = min(raw_conf, 99.0)
+        raw_conf = 70.0 + sum([TOXIC_KEYWORDS[w] * 10 for w in matched_toxic])
+        p_toxic = min(raw_conf, 98.0) / 100.0
         
-        # Sort matched toxic words by their weight
-        matched_toxic.sort(key=lambda x: x[1], reverse=True)
-        for word, weight in matched_toxic[:5]:
-            lime_weights[word] = round(weight, 3)
-            highlighted.append(word)
+        matched_sorted = sorted(matched_toxic, key=lambda x: TOXIC_KEYWORDS[x], reverse=True)
+        for w in matched_sorted[:5]:
+            lime_weights[w] = round(TOXIC_KEYWORDS[w], 3)
+            highlighted.append(w)
             
-        # Add a couple of neutral words to resemble true perturbation lists
         neutral_words = [w for w in words if w not in TOXIC_KEYWORDS]
         random.shuffle(neutral_words)
         for w in neutral_words[:min(2, len(neutral_words))]:
             lime_weights[w] = round(random.uniform(0.01, 0.08), 3)
     else:
-        prediction = "Safe"
-        confidence = round(random.uniform(85.0, 96.5), 1)
-        
-        # Safe posts: select words that contribute to 'Safe' classification (negative toxicity weight)
+        p_toxic = round(random.uniform(0.03, 0.15), 4)
         neutral_words = list(set(words))
         random.shuffle(neutral_words)
         for w in neutral_words[:min(3, len(neutral_words))]:
             lime_weights[w] = round(random.uniform(-0.15, -0.01), 3)
             
-    # Generate user-friendly explanation strings
-    explanations = []
-    for word, weight in lime_weights.items():
-        if weight > 0:
-            explanations.append(f"Word '{word}' increased cyberbullying score by {int(weight * 100)}%.")
-        else:
-            explanations.append(f"Word '{word}' supported Safe classification by {int(abs(weight) * 100)}%.")
-            
-    return {
-        "prediction": prediction,
-        "confidence": confidence,
-        "explanations": explanations,
-        "highlighted": highlighted,
-        "lime_weights": lime_weights,
-        "mode": "mock"
-    }
+    return p_toxic, lime_weights, highlighted
 
-def get_lime_explanation(text, use_real_model=False):
+def get_lime_explanation(
+    text: str, 
+    use_real_model: bool = False, 
+    bypass_context_rules: bool = False, 
+    skip_lime: bool = False,
+    target_user: str = "@anonymous",
+    author_user: str = "@anonymous"
+) -> Dict[str, Any]:
     """
     Main entry point for explainability.
-    If use_real_model is True and dependencies are loaded, performs real LIME perturbation.
-    Otherwise, defaults to fast mock explanation.
+    1. Computes base neural toxicity score P_toxic from Toxic-BERT (or keyword fallback).
+    2. Modulates score using the Rule-Based Context Adjustment Layer (fusion.py) if not bypassed.
+    3. Runs LIME feature attributions.
     """
     _validate_text(text)
     
-    # Use real model if requested, available, and initialized
+    # -------------------------------------------------------------
+    # 1. Base Model Inference (Toxic-BERT or Keyword Lexicon)
+    # -------------------------------------------------------------
+    p_toxic = 0.0
+    mode = "mock"
+    highlighted = []
+    lime_weights = {}
+    explanations = []
+
     if use_real_model and ML_AVAILABLE:
         if _nlp_pipeline is None:
-            initialized = init_ml_model()
-            if not initialized:
-                return get_mock_lime_explanation(text)
-        
-        try:
-            # Define predictor function for LIME.
-            # LIME requires a function that accepts a list of texts and returns a 2D numpy array of probabilities [P(Safe), P(Bullying)]
-            def predictor_fn(texts):
-                pipeline_outputs = _nlp_pipeline(texts)
-                probs = []
-                for output in pipeline_outputs:
-                    # 'toxic-bert' outputs labels: 'toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate'
-                    # We map this to overall toxicity vs safety.
-                    # 'toxic' is the primary classifier label.
-                    toxic_score = 0.0
-                    for label_dict in output:
-                        if label_dict['label'] == 'toxic':
-                            toxic_score = label_dict['score']
-                            break
-                    # If toxic_score is high, it is cyberbullying.
-                    # Probability array: [Safe, Cyberbullying]
-                    probs.append([1.0 - toxic_score, toxic_score])
-                return np.array(probs)
+            init_ml_model()
 
-            # Generate LIME explanation (using 500 perturbations for stability)
-            exp = _explainer.explain_instance(
-                text, 
-                predictor_fn, 
-                num_features=5, 
-                num_samples=500
-            )
-            
-            # Extract results
-            # exp.as_list() returns list of tuples: (word, weight)
-            explanation_list = exp.as_list()
-            
-            # Predict overall label
-            # Get prediction for single input text
-            probs = predictor_fn([text])[0]
-            confidence = float(probs[1] * 100) # Bullying probability
-            
-            if probs[1] >= 0.5:
-                prediction = "Cyberbullying"
-                confidence = round(confidence, 1)
-            else:
-                prediction = "Safe"
-                confidence = round((1.0 - probs[1]) * 100, 1)
+        if _nlp_pipeline is not None:
+            try:
+                mode = "real"
+                def predictor_fn(texts):
+                    pipeline_outputs = _nlp_pipeline(texts)
+                    probs = []
+                    for output in pipeline_outputs:
+                        toxic_score = 0.0
+                        for label_dict in output:
+                            if label_dict['label'] == 'toxic':
+                                toxic_score = label_dict['score']
+                                break
+                        probs.append([1.0 - toxic_score, toxic_score])
+                    return np.array(probs)
 
-            highlighted = []
-            lime_weights = {}
-            explanations = []
-            
-            for word, weight in explanation_list:
-                lime_weights[word] = round(float(weight), 3)
-                if prediction == "Cyberbullying" and weight > 0.05:
-                    highlighted.append(word)
-                    explanations.append(f"Word '{word}' increased cyberbullying score by {int(weight * 100)}%.")
-                elif prediction == "Safe" and weight < -0.05:
-                    explanations.append(f"Word '{word}' supported Safe classification by {int(abs(weight) * 100)}%.")
-                else:
-                    impact = "increased" if weight > 0 else "decreased"
-                    explanations.append(f"Word '{word}' {impact} risk profile by {int(abs(weight) * 100)}%.")
+                probs = predictor_fn([text])[0]
+                p_toxic = float(probs[1])
 
-            return {
-                "prediction": prediction,
-                "confidence": confidence,
-                "explanations": explanations,
-                "highlighted": highlighted,
-                "lime_weights": lime_weights,
-                "mode": "real"
-            }
-            
-        except Exception as e:
-            logger.error(f"Error during real LIME execution: {e}. Falling back to Mock.", exc_info=True)
-            return get_mock_lime_explanation(text)
-            
-    # Default fallback
-    return get_mock_lime_explanation(text)
+                if not skip_lime:
+                    try:
+                        exp = _explainer.explain_instance(text, predictor_fn, num_features=5, num_samples=300)
+                        for word, weight in exp.as_list():
+                            lime_weights[word] = round(float(weight), 3)
+                            if weight > 0.05:
+                                highlighted.append(word)
+                                explanations.append(f"Word '{word}' increased toxicity profile by {int(weight * 100)}%.")
+                            elif weight < -0.05:
+                                explanations.append(f"Word '{word}' supported Safe classification by {int(abs(weight) * 100)}%.")
+                    except Exception as le:
+                        logger.warning(f"LIME perturbation skipped due to error: {le}")
+            except Exception as e:
+                logger.error(f"Error in BERT inference: {e}. Falling back to lexicon.", exc_info=True)
+                p_toxic, lime_weights, highlighted = get_base_mock_score(text)
+                mode = "mock"
+        else:
+            p_toxic, lime_weights, highlighted = get_base_mock_score(text)
+    else:
+        p_toxic, lime_weights, highlighted = get_base_mock_score(text)
+
+    # -------------------------------------------------------------
+    # 2. Score Fusion via Rule-Based Context Adjustment Layer
+    # -------------------------------------------------------------
+    if bypass_context_rules:
+        label = "Cyberbullying" if p_toxic >= 0.50 else "Safe"
+        confidence = (p_toxic * 100.0) if label == "Cyberbullying" else ((1.0 - p_toxic) * 100.0)
+        return {
+            "prediction": label,
+            "confidence": round(confidence, 1),
+            "p_toxic": round(p_toxic, 4),
+            "final_score": round(p_toxic, 4),
+            "total_context_delta": 0.0,
+            "explanations": explanations or [f"Base classifier assigned score {round(p_toxic, 3)}."],
+            "highlighted": highlighted,
+            "lime_weights": lime_weights,
+            "mode": mode
+        }
+
+    fused = fusion.compute_fused_score(
+        text=text,
+        p_toxic=p_toxic,
+        target_user=target_user,
+        author_user=author_user
+    )
+
+    combined_exps = list(fused["explanations"])
+    for exp in explanations:
+        if exp not in combined_exps:
+            combined_exps.append(exp)
+
+    return {
+        "prediction": fused["label"],
+        "confidence": round(fused["confidence"], 1),
+        "p_toxic": round(fused["p_toxic"], 4),
+        "delta_neg": round(fused["delta_neg"], 2),
+        "delta_slang": round(fused["delta_slang"], 2),
+        "delta_sarcasm": round(fused["delta_sarcasm"], 2),
+        "delta_target": round(fused["delta_target"], 2),
+        "total_context_delta": round(fused["total_context_delta"], 4),
+        "final_score": round(fused["s_fused"], 4),
+        "status": fused["status"],
+        "escalate_to_human": fused["escalate_to_human"],
+        "escalation_reason": fused["escalation_reason"],
+        "formula": fused["formula"],
+        "explanations": combined_exps,
+        "highlighted": highlighted,
+        "lime_weights": lime_weights,
+        "mode": mode
+    }
+
+def check_context_overrides(text: str) -> Dict[str, Any]:
+    """
+    Evaluates deterministic linguistic context rules (negation, slang, sarcasm)
+    to check if an override is triggered. Retained for regression tests.
+    """
+    text_lower = text.lower()
+    words = re.findall(r"\b\w+[']?\w*\b", text_lower)
+    
+    signals = fusion.analyze_context_signals(text)
+    
+    # Check for active (unnegated) toxic tokens
+    toxic_indices = [i for i, w in enumerate(words) if w in fusion.TOXIC_TOKENS]
+    active_toxic = []
+    negated_toxic = []
+    
+    for idx in toxic_indices:
+        w = words[idx]
+        start = max(0, idx - 4)
+        has_neg = any(words[j] in fusion.NEGATION_TOKENS for j in range(start, idx))
+        if has_neg:
+            negated_toxic.append(w)
+        else:
+            active_toxic.append(w)
+
+    # 1. Sarcasm overrides everything to Cyberbullying
+    if signals["delta_sarcasm"] > 0:
+        return {
+            "overridden": True,
+            "prediction": "Cyberbullying",
+            "explanation": "; ".join(signals["explanations"])
+        }
+
+    # 2. If there are active, unnegated insults, baseline must decide (no override)
+    if len(active_toxic) > 0:
+        return {
+            "overridden": False,
+            "prediction": "",
+            "explanation": "Active unnegated insults present; standard classification applies."
+        }
+
+    # 3. Negation of all toxic words -> override to Safe
+    if len(negated_toxic) > 0 and len(active_toxic) == 0:
+        return {
+            "overridden": True,
+            "prediction": "Safe",
+            "explanation": "; ".join(signals["explanations"])
+        }
+
+    # 4. Reclaimed slang without active insults -> override to Safe
+    if signals["delta_slang"] < 0:
+        return {
+            "overridden": True,
+            "prediction": "Safe",
+            "explanation": "; ".join(signals["explanations"])
+        }
+
+    return {
+        "overridden": False,
+        "prediction": "",
+        "explanation": "No contextual override triggered."
+    }

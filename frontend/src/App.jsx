@@ -1,13 +1,19 @@
 import React, { useState, useEffect } from 'react';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
+import ReviewQueue from './components/ReviewQueue';
 import Analytics from './components/Analytics';
 import NetworkGraph from './components/NetworkGraph';
+import FairnessPanel from './components/FairnessPanel';
+import LoginModal from './components/LoginModal';
 
-export default function App() {
+function MainApp() {
+  const { role, user } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [backendOnline, setBackendOnline] = useState(false);
   const [posts, setPosts] = useState([]);
+  const [pendingQueueCount, setPendingQueueCount] = useState(0);
   const [analytics, setAnalytics] = useState({
     total_posts: 0,
     approved_count: 0,
@@ -21,8 +27,18 @@ export default function App() {
     ml_packages_installed: false,
     use_real_model: false,
     model_loaded: false,
-    active_model: 'Fast Demo Classifier'
+    active_model: 'Keyword Fallback Classifier'
   });
+
+  const [evaluation, setEvaluation] = useState(null);
+  const [loadingEvaluation, setLoadingEvaluation] = useState(false);
+
+  // Role routing safety check: if moderator somehow lands on admin-only tabs, redirect to dashboard
+  useEffect(() => {
+    if (role === 'moderator' && (activeTab === 'analytics' || activeTab === 'fairness')) {
+      setActiveTab('dashboard');
+    }
+  }, [role, activeTab]);
 
   // Check connection to FastAPI backend
   const checkConnection = async () => {
@@ -45,82 +61,32 @@ export default function App() {
     }
   };
 
-  // Fetch all posts from SQLite database
+  // Fetch pending review queue count
+  const fetchQueueCount = async () => {
+    if (!backendOnline) return;
+    try {
+      const res = await fetch('/api/queue?status=pending');
+      if (res.ok) {
+        const data = await res.json();
+        setPendingQueueCount(data.length);
+      }
+    } catch (err) {
+      // quiet fail
+    }
+  };
+
+  // Fetch posts from database
   const fetchPosts = async () => {
     if (!backendOnline) return;
     try {
       const res = await fetch('/api/posts');
       if (res.ok) {
         const data = await res.json();
-        // Since database rows contain key names that might map slightly differently,
-        // let's transform them to match what Dashboard expects if necessary
-        const formatted = data.map(p => ({
-          id: p.id,
-          user_id: p.user_id,
-          username: p.user_id, // in our schema user_id holds username for convenience
-          text: p.post_text,
-          prediction: p.prediction,
-          confidence: p.confidence,
-          moderator_action: p.moderator_action,
-          timestamp: p.timestamp,
-          // Since explanations and LIME weights are computed on-the-fly and aren't in SQLite,
-          // we can regenerate them quickly or mock them on read if details are expanded
-          highlighted_words: p.prediction === 'Cyberbullying' ? extractToxicWords(p.post_text) : [],
-          lime_weights: generateStaticWeights(p.post_text, p.prediction),
-          explanations: generateStaticExplanations(p.post_text, p.prediction)
-        }));
-        setPosts(formatted);
+        setPosts(data);
       }
     } catch (err) {
       console.error("Failed to fetch database logs:", err);
     }
-  };
-
-  // Helper keyword lists for static recovery of highlighted elements (from SQLite logs)
-  const toxicKeywords = ["trash", "loser", "ugly", "stupid", "idiot", "fat", "gross", "worthless", "brainless", "troll", "annoying", "hateful", "jerk", "pathetic", "hate", "banned", "toxic", "parasite", "worst", "delete", "kill", "disappointment", "garbage", "shame"];
-  
-  const extractToxicWords = (text) => {
-    const words = text.toLowerCase().split(/\b/);
-    return words.filter(w => toxicKeywords.includes(w));
-  };
-
-  const generateStaticWeights = (text, prediction) => {
-    const words = text.toLowerCase().split(/\b/).filter(w => w.trim().length > 1);
-    const weights = {};
-    if (prediction === 'Cyberbullying') {
-      words.forEach(w => {
-        if (toxicKeywords.includes(w)) {
-          weights[w] = 0.5 + Math.random() * 0.4;
-        } else if (Math.random() > 0.7) {
-          weights[w] = Math.random() * 0.08;
-        }
-      });
-    } else {
-      words.slice(0, 3).forEach(w => {
-        weights[w] = -(0.01 + Math.random() * 0.15);
-      });
-    }
-    return weights;
-  };
-
-  const generateStaticExplanations = (text, prediction) => {
-    const weights = generateStaticWeights(text, prediction);
-    const explanations = [];
-    Object.entries(weights).forEach(([word, weight]) => {
-      if (weight > 0) {
-        explanations.append(f => `Word '${word}' increased cyberbullying score by ${int(weight * 100)}%.`); // wait, string interpolation in JS
-      }
-    });
-    // JS equivalent formatting:
-    const exps = [];
-    Object.entries(weights).forEach(([word, weight]) => {
-      if (weight > 0) {
-        exps.push(`Word '${word}' increased cyberbullying score by ${Math.round(weight * 100)}%.`);
-      } else {
-        exps.push(`Word '${word}' supported Safe classification by ${Math.round(Math.abs(weight) * 100)}%.`);
-      }
-    });
-    return exps;
   };
 
   // Fetch aggregate analytics
@@ -137,22 +103,47 @@ export default function App() {
     }
   };
 
-  // Periodic heartbeat connection poller
+  const fetchEvaluation = async () => {
+    if (!backendOnline) return;
+    setLoadingEvaluation(true);
+    try {
+      const res = await fetch('/api/evaluation');
+      if (res.ok) {
+        const data = await res.json();
+        setEvaluation(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch evaluation metrics:", err);
+    } finally {
+      setLoadingEvaluation(false);
+    }
+  };
+
+  // Heartbeat polling
   useEffect(() => {
     checkConnection();
-    const interval = setInterval(checkConnection, 5000);
+    const interval = setInterval(() => {
+      checkConnection();
+      fetchQueueCount();
+    }, 5000);
     return () => clearInterval(interval);
   }, []);
 
-  // Fetch initial database items when backend online status flips to TRUE
   useEffect(() => {
     if (backendOnline) {
       fetchPosts();
       fetchAnalytics();
+      fetchQueueCount();
     }
   }, [backendOnline]);
 
-  // Trigger a single live feed simulator step
+  useEffect(() => {
+    if (activeTab === 'analytics') {
+      fetchEvaluation();
+    }
+  }, [activeTab, backendOnline]);
+
+  // Single post step trigger (for manual fallback button)
   const triggerNextPost = async () => {
     if (!backendOnline) return;
     try {
@@ -160,14 +151,15 @@ export default function App() {
       if (res.ok) {
         const newPost = await res.json();
         setPosts(prev => [newPost, ...prev]);
-        fetchAnalytics(); // dynamically update analytics counts in real-time
+        fetchAnalytics();
+        fetchQueueCount();
       }
     } catch (err) {
       console.error("Failed to trigger simulation step:", err);
     }
   };
 
-  // Perform moderator action (Approve / Hide / Review)
+  // Handle quick action (Approve / Hide)
   const handleAction = async (postId, action) => {
     if (!backendOnline) return;
     try {
@@ -177,16 +169,16 @@ export default function App() {
         body: JSON.stringify({ action })
       });
       if (res.ok) {
-        // Update local state instantly for smooth rendering transitions
         setPosts(prev => prev.map(p => p.id === postId ? { ...p, moderator_action: action } : p));
-        fetchAnalytics(); // recalculate moderator agreement percentages
+        fetchAnalytics();
+        fetchQueueCount();
       }
     } catch (err) {
-      console.error("Failed to update moderator decision:", err);
+      console.error("Failed to update moderator action:", err);
     }
   };
 
-  // Toggle AI backend mode (BERT vs Fast Fallback)
+  // Toggle AI model mode
   const toggleAiMode = async () => {
     if (!backendOnline) return;
     try {
@@ -197,7 +189,6 @@ export default function App() {
           ...prev,
           use_real_model: data.use_real_model
         }));
-        // Re-read status to sync full parameters
         checkConnection();
       }
     } catch (err) {
@@ -205,7 +196,7 @@ export default function App() {
     }
   };
 
-  // Routing render helper
+  // View routing helper
   const renderContent = () => {
     switch (activeTab) {
       case 'dashboard':
@@ -216,12 +207,27 @@ export default function App() {
             handleAction={handleAction} 
             backendOnline={backendOnline}
             triggerNextPost={triggerNextPost}
+            setActiveTab={setActiveTab}
+            refreshAnalytics={fetchAnalytics}
           />
         );
-      case 'analytics':
-        return <Analytics analytics={analytics} backendOnline={backendOnline} />;
+      case 'queue':
+        return <ReviewQueue backendOnline={backendOnline} />;
       case 'network':
         return <NetworkGraph backendOnline={backendOnline} />;
+      case 'analytics':
+        return (
+          <Analytics 
+            analytics={analytics} 
+            backendOnline={backendOnline} 
+            evaluation={evaluation}
+            loadingEvaluation={loadingEvaluation}
+            refetchEvaluation={fetchEvaluation}
+            setActiveTab={setActiveTab}
+          />
+        );
+      case 'fairness':
+        return <FairnessPanel backendOnline={backendOnline} />;
       default:
         return (
           <div className="flex-1 flex items-center justify-center text-slate-400">
@@ -239,8 +245,18 @@ export default function App() {
         systemStatus={systemStatus}
         toggleAiMode={toggleAiMode}
         backendOnline={backendOnline}
+        pendingQueueCount={pendingQueueCount}
       />
       {renderContent()}
+      <LoginModal />
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <MainApp />
+    </AuthProvider>
   );
 }
